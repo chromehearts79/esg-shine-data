@@ -44,6 +44,56 @@ export type Database = {
         }
         Relationships: []
       }
+      indicator_attachments: {
+        Row: {
+          created_at: string
+          file_name: string
+          id: string
+          indicator_id: string
+          mime_type: string | null
+          note: string | null
+          period_quarter: number | null
+          period_year: number | null
+          size_bytes: number | null
+          storage_path: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          id?: string
+          indicator_id: string
+          mime_type?: string | null
+          note?: string | null
+          period_quarter?: number | null
+          period_year?: number | null
+          size_bytes?: number | null
+          storage_path: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          id?: string
+          indicator_id?: string
+          mime_type?: string | null
+          note?: string | null
+          period_quarter?: number | null
+          period_year?: number | null
+          size_bytes?: number | null
+          storage_path?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "indicator_attachments_indicator_id_fkey"
+            columns: ["indicator_id"]
+            isOneToOne: false
+            referencedRelation: "indicators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       indicator_categories: {
         Row: {
           code: string
@@ -73,6 +123,167 @@ export type Database = {
           sort_order?: number
         }
         Relationships: []
+      }
+      indicator_narratives: {
+        Row: {
+          content: string | null
+          created_at: string
+          id: string
+          indicator_id: string
+          period_quarter: number | null
+          period_year: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          id?: string
+          indicator_id: string
+          period_quarter?: number | null
+          period_year: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          id?: string
+          indicator_id?: string
+          period_quarter?: number | null
+          period_year?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "indicator_narratives_indicator_id_fkey"
+            columns: ["indicator_id"]
+            isOneToOne: false
+            referencedRelation: "indicators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      indicator_table_cells_schema: {
+        Row: {
+          col_no: number
+          id: string
+          is_input: boolean
+          label: string
+          row_no: number
+          table_id: string
+        }
+        Insert: {
+          col_no: number
+          id?: string
+          is_input?: boolean
+          label: string
+          row_no: number
+          table_id: string
+        }
+        Update: {
+          col_no?: number
+          id?: string
+          is_input?: boolean
+          label?: string
+          row_no?: number
+          table_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "indicator_table_cells_schema_table_id_fkey"
+            columns: ["table_id"]
+            isOneToOne: false
+            referencedRelation: "indicator_tables"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      indicator_table_values: {
+        Row: {
+          col_no: number
+          created_at: string
+          id: string
+          numeric_value: number | null
+          period_year: number
+          row_no: number
+          table_id: string
+          text_value: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          col_no: number
+          created_at?: string
+          id?: string
+          numeric_value?: number | null
+          period_year: number
+          row_no: number
+          table_id: string
+          text_value?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          col_no?: number
+          created_at?: string
+          id?: string
+          numeric_value?: number | null
+          period_year?: number
+          row_no?: number
+          table_id?: string
+          text_value?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "indicator_table_values_table_id_fkey"
+            columns: ["table_id"]
+            isOneToOne: false
+            referencedRelation: "indicator_tables"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      indicator_tables: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          indicator_id: string
+          sort_order: number
+          table_no: number
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          indicator_id: string
+          sort_order?: number
+          table_no: number
+          title: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          indicator_id?: string
+          sort_order?: number
+          table_no?: number
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "indicator_tables_indicator_id_fkey"
+            columns: ["indicator_id"]
+            isOneToOne: false
+            referencedRelation: "indicators"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       indicator_values: {
         Row: {
@@ -132,43 +343,61 @@ export type Database = {
           category_id: string | null
           code: string
           created_at: string
+          cycle: string | null
+          department: string | null
           description: string | null
+          evidence_required: string | null
+          excluded_reason: string | null
           guideline_ref: string | null
           id: string
+          input_method: string
           is_active: boolean
           name: string
           sort_order: number
           type: Database["public"]["Enums"]["indicator_type"]
           unit: string | null
           updated_at: string
+          writing_guide: string | null
         }
         Insert: {
           category_id?: string | null
           code: string
           created_at?: string
+          cycle?: string | null
+          department?: string | null
           description?: string | null
+          evidence_required?: string | null
+          excluded_reason?: string | null
           guideline_ref?: string | null
           id?: string
+          input_method?: string
           is_active?: boolean
           name: string
           sort_order?: number
           type?: Database["public"]["Enums"]["indicator_type"]
           unit?: string | null
           updated_at?: string
+          writing_guide?: string | null
         }
         Update: {
           category_id?: string | null
           code?: string
           created_at?: string
+          cycle?: string | null
+          department?: string | null
           description?: string | null
+          evidence_required?: string | null
+          excluded_reason?: string | null
           guideline_ref?: string | null
           id?: string
+          input_method?: string
           is_active?: boolean
           name?: string
           sort_order?: number
           type?: Database["public"]["Enums"]["indicator_type"]
           unit?: string | null
           updated_at?: string
+          writing_guide?: string | null
         }
         Relationships: [
           {
