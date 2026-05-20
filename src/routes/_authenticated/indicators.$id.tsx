@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Upload, Trash2, FileText } from "lucide-react";
+import { ArrowLeft, Upload, Trash2, FileText, Download, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/indicators/$id")({
@@ -125,6 +126,10 @@ function IndicatorDetailPage() {
             </CardDescription>
           </CardHeader>
         </Card>
+      )}
+
+      {!isExcluded && isQuant && (tables ?? []).length > 0 && (
+        <TemplateIO indicatorId={id} code={indicator.code} name={indicator.name} year={year} canEdit={canEdit} userId={user?.id ?? null} />
       )}
 
       {!isExcluded && (
@@ -404,6 +409,195 @@ function AttachmentsPanel({ indicatorId, canEdit, isAdmin, userId }: { indicator
             ))}
           </ul>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function sanitizeSheetName(s: string) {
+  return s.replace(/[\\\/\?\*\[\]:]/g, " ").slice(0, 28).trim() || "Sheet";
+}
+
+function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indicatorId: string; code: string; name: string; year: number; canEdit: boolean; userId: string | null }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const fetchSchema = async () => {
+    const { data: tables, error: tErr } = await supabase
+      .from("indicator_tables")
+      .select("id, table_no, title")
+      .eq("indicator_id", indicatorId)
+      .order("sort_order");
+    if (tErr || !tables) throw new Error(tErr?.message ?? "표 정보 조회 실패");
+
+    const tableIds = tables.map((t) => t.id);
+    const [{ data: cells }, { data: vals }] = await Promise.all([
+      supabase.from("indicator_table_cells_schema").select("table_id, row_no, col_no, label, is_input").in("table_id", tableIds),
+      supabase.from("indicator_table_values").select("table_id, row_no, col_no, numeric_value, text_value").in("table_id", tableIds).eq("period_year", year),
+    ]);
+    return { tables, cells: cells ?? [], vals: vals ?? [] };
+  };
+
+  const downloadTemplate = async (withValues: boolean) => {
+    setBusy(true);
+    try {
+      const { tables, cells, vals } = await fetchSchema();
+      const wb = XLSX.utils.book_new();
+      const usedNames = new Set<string>();
+      for (const t of tables) {
+        const tCells = cells.filter((c) => c.table_id === t.id);
+        const tVals = vals.filter((v) => v.table_id === t.id);
+        if (tCells.length === 0) continue;
+        const maxRow = Math.max(...tCells.map((c) => c.row_no));
+        const maxCol = Math.max(...tCells.map((c) => c.col_no));
+        // Build AOA: row 1 = header band
+        const aoa: (string | number | null)[][] = [];
+        aoa.push([`[${code}] ${name} — 표 ${t.table_no}. ${t.title} (${year}년)`]);
+        aoa.push([]); // spacer
+        const rowOffset = 2; // grid starts at sheet row index 2 (0-based)
+        for (let r = 1; r <= maxRow; r++) {
+          const rowArr: (string | number | null)[] = [];
+          for (let c = 1; c <= maxCol; c++) {
+            const cell = tCells.find((x) => x.row_no === r && x.col_no === c);
+            if (!cell) { rowArr.push(null); continue; }
+            if (!cell.is_input) { rowArr.push(cell.label); continue; }
+            if (withValues) {
+              const v = tVals.find((x) => x.row_no === r && x.col_no === c);
+              rowArr.push(v ? (v.numeric_value ?? v.text_value ?? null) : null);
+            } else {
+              rowArr.push(null);
+            }
+          }
+          aoa.push(rowArr);
+        }
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        // Column widths
+        ws["!cols"] = Array.from({ length: maxCol }, () => ({ wch: 18 }));
+        let base = sanitizeSheetName(`T${t.table_no}_${t.title}`);
+        let nm = base;
+        let i = 2;
+        while (usedNames.has(nm)) { nm = `${base.slice(0, 25)}_${i++}`; }
+        usedNames.add(nm);
+        XLSX.utils.book_append_sheet(wb, ws, nm);
+      }
+      if (wb.SheetNames.length === 0) {
+        toast.error("다운로드할 표 양식이 없습니다");
+        return;
+      }
+      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+      const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${code}_${year}_${withValues ? "현황" : "양식"}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success("다운로드를 시작합니다");
+    } catch (e) {
+      toast.error("양식 다운로드 실패", { description: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUpload = async (file: File) => {
+    setBusy(true);
+    try {
+      const { tables, cells } = await fetchSchema();
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf);
+      const rowOffset = 2; // header + spacer rows in template
+      const payload: {
+        table_id: string; period_year: number; row_no: number; col_no: number;
+        numeric_value: number | null; text_value: string | null; updated_by: string | null;
+      }[] = [];
+      let matchedSheets = 0;
+      for (const t of tables) {
+        const tCells = cells.filter((c) => c.table_id === t.id && c.is_input);
+        if (tCells.length === 0) continue;
+        const baseName = sanitizeSheetName(`T${t.table_no}_${t.title}`);
+        // Find a sheet whose name starts with T{table_no}
+        const sheetName = wb.SheetNames.find((n) => n === baseName)
+          ?? wb.SheetNames.find((n) => n.startsWith(`T${t.table_no}_`) || n.startsWith(`T${t.table_no} `))
+          ?? wb.SheetNames.find((n) => n.startsWith(`T${t.table_no}`));
+        if (!sheetName) continue;
+        matchedSheets++;
+        const ws = wb.Sheets[sheetName];
+        const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+        for (const cell of tCells) {
+          const sheetRow = aoa[rowOffset + (cell.row_no - 1)];
+          if (!sheetRow) continue;
+          const raw = sheetRow[cell.col_no - 1];
+          if (raw === null || raw === undefined || raw === "") continue;
+          const asNum = typeof raw === "number" ? raw : Number(String(raw).replace(/,/g, ""));
+          const isNum = Number.isFinite(asNum) && String(raw).trim() !== "";
+          payload.push({
+            table_id: t.id,
+            period_year: year,
+            row_no: cell.row_no,
+            col_no: cell.col_no,
+            numeric_value: isNum ? asNum : null,
+            text_value: isNum ? null : String(raw),
+            updated_by: userId,
+          });
+        }
+      }
+      if (matchedSheets === 0) {
+        toast.error("이 지표의 양식 시트를 찾지 못했습니다", { description: "다운로드한 양식의 시트명을 변경하지 마세요." });
+        return;
+      }
+      if (payload.length === 0) {
+        toast.error("입력된 값이 없습니다");
+        return;
+      }
+      const { error } = await supabase
+        .from("indicator_table_values")
+        .upsert(payload, { onConflict: "table_id,period_year,row_no,col_no" });
+      if (error) toast.error("업로드 실패", { description: error.message });
+      else toast.success(`${payload.length}개 셀이 저장되었습니다`);
+    } catch (e) {
+      toast.error("업로드 실패", { description: (e as Error).message });
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <FileSpreadsheet className="size-4" />엑셀 양식 다운로드 / 업로드
+        </CardTitle>
+        <CardDescription>
+          이 지표 전용 양식을 다운받아 값을 채워 다시 업로드하면 표가 일괄 저장됩니다. ({year}년)
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => downloadTemplate(false)}>
+            <Download className="size-4 mr-1" />빈 양식
+          </Button>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => downloadTemplate(true)}>
+            <Download className="size-4 mr-1" />현재 값 포함
+          </Button>
+          {canEdit && (
+            <>
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+              />
+              <Button size="sm" disabled={busy} onClick={() => inputRef.current?.click()} className="ml-auto">
+                <Upload className="size-4 mr-1" />작성한 양식 업로드
+              </Button>
+            </>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
