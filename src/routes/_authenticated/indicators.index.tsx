@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-export const Route = createFileRoute("/_authenticated/indicators")({
+export const Route = createFileRoute("/_authenticated/indicators/")({
   head: () => ({ meta: [{ title: "지표 목록 — ESG 지표관리" }] }),
   component: IndicatorsListPage,
 });
