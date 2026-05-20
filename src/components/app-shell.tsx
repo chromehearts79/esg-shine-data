@@ -35,7 +35,7 @@ export function AppShell() {
             <nav className="hidden md:flex items-center gap-1">
               {navItem("/dashboard", "대시보드", <LayoutDashboard className="size-4" />)}
               {navItem("/indicators", "지표", <ListChecks className="size-4" />)}
-              {navItem("/upload", "엑셀 업로드", <Upload className="size-4" />)}
+              {isAdmin && navItem("/upload", "엑셀 업로드", <Upload className="size-4" />)}
               {isAdmin && navItem("/admin/indicators", "지표 마스터", <Settings className="size-4" />)}
             </nav>
           </div>
@@ -50,7 +50,7 @@ export function AppShell() {
         <nav className="md:hidden border-t flex overflow-x-auto px-2 py-1 gap-1">
           {navItem("/dashboard", "대시보드", <LayoutDashboard className="size-4" />)}
           {navItem("/indicators", "지표", <ListChecks className="size-4" />)}
-          {navItem("/upload", "업로드", <Upload className="size-4" />)}
+          {isAdmin && navItem("/upload", "엑셀", <Upload className="size-4" />)}
           {isAdmin && navItem("/admin/indicators", "마스터", <Settings className="size-4" />)}
         </nav>
       </header>
