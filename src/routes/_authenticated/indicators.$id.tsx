@@ -128,6 +128,10 @@ function IndicatorDetailPage() {
         </Card>
       )}
 
+      {!isExcluded && isQuant && (tables ?? []).length > 0 && (
+        <TemplateIO indicatorId={id} code={indicator.code} name={indicator.name} year={year} canEdit={canEdit} userId={user?.id ?? null} />
+      )}
+
       {!isExcluded && (
         <NarrativeEditor indicatorId={id} year={year} canEdit={canEdit} userId={user?.id ?? null} />
       )}
