@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
@@ -193,6 +193,7 @@ function TableEditor({ table, year, canEdit, userId }: { table: TableDef; year: 
     return { grid: { schema: map, vals: valMap }, maxRow: mr, maxCol: mc };
   }, [cells, values]);
 
+  const queryClient = useQueryClient();
   const save = async (row_no: number, col_no: number, raw: string) => {
     const num = raw.trim() === "" ? null : Number(raw);
     const isNum = num !== null && !Number.isNaN(num);
@@ -209,6 +210,7 @@ function TableEditor({ table, year, canEdit, userId }: { table: TableDef; year: 
       .from("indicator_table_values")
       .upsert(payload, { onConflict: "table_id,period_year,row_no,col_no" });
     if (error) toast.error(error.message);
+    else queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
   };
 
   if (!cells) return null;
@@ -297,13 +299,33 @@ function NarrativeEditor({ indicatorId, year, canEdit, userId }: { indicatorId: 
     return () => { supabase.removeChannel(ch); };
   }, [indicatorId, year, refetch]);
 
+  const queryClient = useQueryClient();
   const save = async () => {
-    const { error } = await supabase
+    const { data: existing, error: selErr } = await supabase
       .from("indicator_narratives")
-      .upsert({ indicator_id: indicatorId, period_year: year, period_quarter: null, content: val, updated_by: userId },
-        { onConflict: "indicator_id,period_year,period_quarter" });
+      .select("id")
+      .eq("indicator_id", indicatorId)
+      .eq("period_year", year)
+      .is("period_quarter", null)
+      .limit(1)
+      .maybeSingle();
+    if (selErr) { toast.error(selErr.message); return; }
+    let error;
+    if (existing) {
+      ({ error } = await supabase
+        .from("indicator_narratives")
+        .update({ content: val, updated_by: userId, updated_at: new Date().toISOString() })
+        .eq("id", existing.id));
+    } else {
+      ({ error } = await supabase
+        .from("indicator_narratives")
+        .insert({ indicator_id: indicatorId, period_year: year, period_quarter: null, content: val, updated_by: userId }));
+    }
     if (error) toast.error(error.message);
-    else toast.success("저장되었습니다");
+    else {
+      toast.success("저장되었습니다");
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    }
   };
 
   return (
@@ -325,6 +347,7 @@ function NarrativeEditor({ indicatorId, year, canEdit, userId }: { indicatorId: 
 }
 
 function AttachmentsPanel({ indicatorId, canEdit, isAdmin, userId }: { indicatorId: string; canEdit: boolean; isAdmin: boolean; userId: string | null }) {
+  const queryClient = useQueryClient();
   const { data: files, refetch } = useQuery({
     queryKey: ["att", indicatorId],
     queryFn: async () => {
@@ -358,7 +381,10 @@ function AttachmentsPanel({ indicatorId, canEdit, isAdmin, userId }: { indicator
       uploaded_by: userId,
     });
     if (error) toast.error(error.message);
-    else toast.success(`${file.name} 업로드 완료`);
+    else {
+      toast.success(`${file.name} 업로드 완료`);
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    }
   };
 
   const download = async (path: string, name: string) => {
@@ -419,6 +445,7 @@ function sanitizeSheetName(s: string) {
 }
 
 function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indicatorId: string; code: string; name: string; year: number; canEdit: boolean; userId: string | null }) {
+  const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
@@ -556,7 +583,10 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
         .from("indicator_table_values")
         .upsert(payload, { onConflict: "table_id,period_year,row_no,col_no" });
       if (error) toast.error("업로드 실패", { description: error.message });
-      else toast.success(`${payload.length}개 셀이 저장되었습니다`);
+      else {
+        toast.success(`${payload.length}개 셀이 저장되었습니다`);
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      }
     } catch (e) {
       toast.error("업로드 실패", { description: (e as Error).message });
     } finally {
