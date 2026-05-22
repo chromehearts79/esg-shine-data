@@ -535,11 +535,12 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
       const { tables, cells } = await fetchSchema();
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf);
-      const rowOffset = 2; // header + spacer rows in template
       const usedNames = new Set<string>();
       const importTargets = tables
         .map((t) => {
-          const inputCells = cells.filter((c) => c.table_id === t.id && c.is_input);
+          const allCells = cells.filter((c) => c.table_id === t.id);
+          const inputCells = allCells.filter((c) => c.is_input);
+          const labelCells = allCells.filter((c) => !c.is_input && c.label);
           let expectedSheetName = sanitizeSheetName(`T${t.table_no}_${t.title}`);
           const baseSheetName = expectedSheetName;
           let duplicateIndex = 2;
@@ -547,7 +548,7 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
             expectedSheetName = `${baseSheetName.slice(0, 25)}_${duplicateIndex++}`;
           }
           usedNames.add(expectedSheetName);
-          return { table: t, inputCells, expectedSheetName };
+          return { table: t, inputCells, labelCells, expectedSheetName };
         })
         .filter((target) => target.inputCells.length > 0);
       const payload: {
@@ -559,7 +560,7 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
       let totalInputCells = 0;
       let totalReadValues = 0;
       for (let targetIndex = 0; targetIndex < importTargets.length; targetIndex++) {
-        const { table: t, inputCells: tCells, expectedSheetName } = importTargets[targetIndex];
+        const { table: t, inputCells: tCells, labelCells: tLabels, expectedSheetName } = importTargets[targetIndex];
         totalInputCells += tCells.length;
         const sheetName = wb.SheetNames.find((n) => n === expectedSheetName)
           ?? wb.SheetNames.find((n) => n.startsWith(`T${t.table_no}_`) || n.startsWith(`T${t.table_no} `))
@@ -570,9 +571,36 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
           continue;
         }
         matchedSheets++;
-        let readValuesForSheet = 0;
         const ws = wb.Sheets[sheetName];
-        const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
+        const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, blankrows: true });
+
+        // Auto-detect rowOffset: try 0..5. Prefer offset where known non-input labels align.
+        // Fallback: pick offset that yields most non-null values at input positions.
+        const candidateOffsets = [2, 1, 3, 0, 4, 5];
+        let bestOffset = 2;
+        let bestScore = -1;
+        for (const off of candidateOffsets) {
+          let score = 0;
+          if (tLabels.length > 0) {
+            for (const lc of tLabels) {
+              const row = aoa[off + (lc.row_no - 1)];
+              if (!row) continue;
+              const v = row[lc.col_no - 1];
+              if (v != null && String(v).trim() === String(lc.label).trim()) score++;
+            }
+          } else {
+            for (const ic of tCells) {
+              const row = aoa[off + (ic.row_no - 1)];
+              if (!row) continue;
+              const v = row[ic.col_no - 1];
+              if (v !== null && v !== undefined && v !== "") score++;
+            }
+          }
+          if (score > bestScore) { bestScore = score; bestOffset = off; }
+        }
+        const rowOffset = bestOffset;
+
+        let readValuesForSheet = 0;
         for (const cell of tCells) {
           const sheetRow = aoa[rowOffset + (cell.row_no - 1)];
           if (!sheetRow) continue;
@@ -592,7 +620,7 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
           });
         }
         totalReadValues += readValuesForSheet;
-        matchLogs.push(`표 ${t.table_no} "${t.title}": 읽은 시트 "${sheetName}" / 기대 "${expectedSheetName}" / 입력 셀 ${tCells.length} / 읽은 값 ${readValuesForSheet}`);
+        matchLogs.push(`표 ${t.table_no} "${t.title}": 시트 "${sheetName}" / offset=${rowOffset} / 라벨매칭=${tLabels.length > 0 ? bestScore + "/" + tLabels.length : "n/a"} / 입력 셀 ${tCells.length} / 읽은 값 ${readValuesForSheet}`);
       }
       console.info("[TemplateIO upload] sheet/table match summary", {
         fileName: file.name,
@@ -606,7 +634,7 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
         return;
       }
       if (payload.length === 0) {
-        toast.error("입력된 값이 없습니다", { description: `읽은 시트명: ${wb.SheetNames.join(", ") || "없음"}\n기대한 시트명: ${importTargets.map((t) => t.expectedSheetName).join(", ") || "없음"}\n입력 셀 개수: ${totalInputCells}\n읽은 값 개수: ${totalReadValues}` });
+        toast.error("입력된 값이 없습니다", { description: `읽은 시트명: ${wb.SheetNames.join(", ") || "없음"}\n기대한 시트명: ${importTargets.map((t) => t.expectedSheetName).join(", ") || "없음"}\n입력 셀 개수: ${totalInputCells}\n읽은 값 개수: ${totalReadValues}\n매칭 로그:\n${matchLogs.join("\n")}` });
         return;
       }
       const { error } = await supabase
