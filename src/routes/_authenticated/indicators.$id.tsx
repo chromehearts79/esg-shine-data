@@ -536,21 +536,41 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf);
       const rowOffset = 2; // header + spacer rows in template
+      const usedNames = new Set<string>();
+      const importTargets = tables
+        .map((t) => {
+          const inputCells = cells.filter((c) => c.table_id === t.id && c.is_input);
+          let expectedSheetName = sanitizeSheetName(`T${t.table_no}_${t.title}`);
+          const baseSheetName = expectedSheetName;
+          let duplicateIndex = 2;
+          while (usedNames.has(expectedSheetName)) {
+            expectedSheetName = `${baseSheetName.slice(0, 25)}_${duplicateIndex++}`;
+          }
+          usedNames.add(expectedSheetName);
+          return { table: t, inputCells, expectedSheetName };
+        })
+        .filter((target) => target.inputCells.length > 0);
       const payload: {
         table_id: string; period_year: number; row_no: number; col_no: number;
         numeric_value: number | null; text_value: string | null; updated_by: string | null;
       }[] = [];
       let matchedSheets = 0;
-      for (const t of tables) {
-        const tCells = cells.filter((c) => c.table_id === t.id && c.is_input);
-        if (tCells.length === 0) continue;
-        const baseName = sanitizeSheetName(`T${t.table_no}_${t.title}`);
-        // Find a sheet whose name starts with T{table_no}
-        const sheetName = wb.SheetNames.find((n) => n === baseName)
+      const matchLogs: string[] = [];
+      let totalInputCells = 0;
+      let totalReadValues = 0;
+      for (let targetIndex = 0; targetIndex < importTargets.length; targetIndex++) {
+        const { table: t, inputCells: tCells, expectedSheetName } = importTargets[targetIndex];
+        totalInputCells += tCells.length;
+        const sheetName = wb.SheetNames.find((n) => n === expectedSheetName)
           ?? wb.SheetNames.find((n) => n.startsWith(`T${t.table_no}_`) || n.startsWith(`T${t.table_no} `))
-          ?? wb.SheetNames.find((n) => n.startsWith(`T${t.table_no}`));
-        if (!sheetName) continue;
+          ?? wb.SheetNames.find((n) => n.startsWith(`T${t.table_no}`))
+          ?? wb.SheetNames[targetIndex];
+        if (!sheetName) {
+          matchLogs.push(`표 ${t.table_no} "${t.title}": 매칭 실패 / 기대 "${expectedSheetName}" / 입력 셀 ${tCells.length}`);
+          continue;
+        }
         matchedSheets++;
+        let readValuesForSheet = 0;
         const ws = wb.Sheets[sheetName];
         const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null });
         for (const cell of tCells) {
@@ -558,6 +578,7 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
           if (!sheetRow) continue;
           const raw = sheetRow[cell.col_no - 1];
           if (raw === null || raw === undefined || raw === "") continue;
+          readValuesForSheet++;
           const asNum = typeof raw === "number" ? raw : Number(String(raw).replace(/,/g, ""));
           const isNum = Number.isFinite(asNum) && String(raw).trim() !== "";
           payload.push({
@@ -570,13 +591,22 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
             updated_by: userId,
           });
         }
+        totalReadValues += readValuesForSheet;
+        matchLogs.push(`표 ${t.table_no} "${t.title}": 읽은 시트 "${sheetName}" / 기대 "${expectedSheetName}" / 입력 셀 ${tCells.length} / 읽은 값 ${readValuesForSheet}`);
       }
+      console.info("[TemplateIO upload] sheet/table match summary", {
+        fileName: file.name,
+        workbookSheets: wb.SheetNames,
+        matches: matchLogs,
+        totalInputCells,
+        totalReadValues,
+      });
       if (matchedSheets === 0) {
-        toast.error("이 지표의 양식 시트를 찾지 못했습니다", { description: "다운로드한 양식의 시트명을 변경하지 마세요." });
+        toast.error("이 지표의 양식 시트를 찾지 못했습니다", { description: `읽은 시트명: ${wb.SheetNames.join(", ") || "없음"}\n기대한 시트명: ${importTargets.map((t) => t.expectedSheetName).join(", ") || "없음"}\n입력 셀 개수: ${totalInputCells}\n읽은 값 개수: ${totalReadValues}` });
         return;
       }
       if (payload.length === 0) {
-        toast.error("입력된 값이 없습니다");
+        toast.error("입력된 값이 없습니다", { description: `읽은 시트명: ${wb.SheetNames.join(", ") || "없음"}\n기대한 시트명: ${importTargets.map((t) => t.expectedSheetName).join(", ") || "없음"}\n입력 셀 개수: ${totalInputCells}\n읽은 값 개수: ${totalReadValues}` });
         return;
       }
       const { error } = await supabase
@@ -585,7 +615,12 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
       if (error) toast.error("업로드 실패", { description: error.message });
       else {
         toast.success(`${payload.length}개 셀이 저장되었습니다`);
-        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["values"] }),
+          queryClient.refetchQueries({ queryKey: ["values"], type: "active" }),
+          queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] }),
+          queryClient.refetchQueries({ queryKey: ["dashboard-stats"], type: "active" }),
+        ]);
       }
     } catch (e) {
       toast.error("업로드 실패", { description: (e as Error).message });
