@@ -472,19 +472,18 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
         const tCells = cells.filter((c) => c.table_id === t.id);
         const tVals = vals.filter((v) => v.table_id === t.id);
         if (tCells.length === 0) continue;
-        const maxRow = Math.max(...tCells.map((c) => c.row_no));
-        const maxCol = Math.max(...tCells.map((c) => c.col_no));
+        const maxRow = Math.max(...tCells.map((c) => c.row_no), ...tVals.map((v) => v.row_no), 0);
+        const maxCol = Math.max(...tCells.map((c) => c.col_no), ...tVals.map((v) => v.col_no), 0);
         // Build AOA: row 1 = header band
         const aoa: (string | number | null)[][] = [];
         aoa.push([`[${code}] ${name} — 표 ${t.table_no}. ${t.title} (${year}년)`]);
         aoa.push([]); // spacer
-        const rowOffset = 2; // grid starts at sheet row index 2 (0-based)
         for (let r = 1; r <= maxRow; r++) {
           const rowArr: (string | number | null)[] = [];
           for (let c = 1; c <= maxCol; c++) {
             const cell = tCells.find((x) => x.row_no === r && x.col_no === c);
-            if (!cell) { rowArr.push(null); continue; }
-            if (!cell.is_input) { rowArr.push(cell.label); continue; }
+            if (cell && !cell.is_input) { rowArr.push(cell.label); continue; }
+            // Input cell (explicit is_input or no schema entry): write the stored value
             if (withValues) {
               const v = tVals.find((x) => x.row_no === r && x.col_no === c);
               rowArr.push(v ? (v.numeric_value ?? v.text_value ?? null) : null);
