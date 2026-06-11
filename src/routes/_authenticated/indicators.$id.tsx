@@ -529,143 +529,14 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
     }
   };
 
-  const handleUpload = async (file: File) => {
-    setBusy(true);
-    try {
-      const { tables, cells } = await fetchSchema();
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf);
-      const usedNames = new Set<string>();
-      const importTargets = tables
-        .map((t) => {
-          const allCells = cells.filter((c) => c.table_id === t.id);
-          const inputCells = allCells.filter((c) => c.is_input);
-          const labelCells = allCells.filter((c) => !c.is_input && c.label);
-          let expectedSheetName = sanitizeSheetName(`T${t.table_no}_${t.title}`);
-          const baseSheetName = expectedSheetName;
-          let duplicateIndex = 2;
-          while (usedNames.has(expectedSheetName)) {
-            expectedSheetName = `${baseSheetName.slice(0, 25)}_${duplicateIndex++}`;
-          }
-          usedNames.add(expectedSheetName);
-          return { table: t, inputCells, labelCells, expectedSheetName };
-        })
-        .filter((target) => target.inputCells.length > 0);
-      const payload: {
-        table_id: string; period_year: number; row_no: number; col_no: number;
-        numeric_value: number | null; text_value: string | null; updated_by: string | null;
-      }[] = [];
-      let matchedSheets = 0;
-      const matchLogs: string[] = [];
-      let totalInputCells = 0;
-      let totalReadValues = 0;
-      for (let targetIndex = 0; targetIndex < importTargets.length; targetIndex++) {
-        const { table: t, inputCells: tCells, labelCells: tLabels, expectedSheetName } = importTargets[targetIndex];
-        totalInputCells += tCells.length;
-        const sheetName = wb.SheetNames.find((n) => n === expectedSheetName)
-          ?? wb.SheetNames.find((n) => n.startsWith(`T${t.table_no}_`) || n.startsWith(`T${t.table_no} `))
-          ?? wb.SheetNames.find((n) => n.startsWith(`T${t.table_no}`))
-          ?? wb.SheetNames[targetIndex];
-        if (!sheetName) {
-          matchLogs.push(`표 ${t.table_no} "${t.title}": 매칭 실패 / 기대 "${expectedSheetName}" / 입력 셀 ${tCells.length}`);
-          continue;
-        }
-        matchedSheets++;
-        const ws = wb.Sheets[sheetName];
-        const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, blankrows: true });
-
-        // Auto-detect rowOffset: try 0..5. Prefer offset where known non-input labels align.
-        // Fallback: pick offset that yields most non-null values at input positions.
-        const candidateOffsets = [2, 1, 3, 0, 4, 5];
-        let bestOffset = 2;
-        let bestScore = -1;
-        for (const off of candidateOffsets) {
-          let score = 0;
-          if (tLabels.length > 0) {
-            for (const lc of tLabels) {
-              const row = aoa[off + (lc.row_no - 1)];
-              if (!row) continue;
-              const v = row[lc.col_no - 1];
-              if (v != null && String(v).trim() === String(lc.label).trim()) score++;
-            }
-          } else {
-            for (const ic of tCells) {
-              const row = aoa[off + (ic.row_no - 1)];
-              if (!row) continue;
-              const v = row[ic.col_no - 1];
-              if (v !== null && v !== undefined && v !== "") score++;
-            }
-          }
-          if (score > bestScore) { bestScore = score; bestOffset = off; }
-        }
-        const rowOffset = bestOffset;
-
-        let readValuesForSheet = 0;
-        for (const cell of tCells) {
-          const sheetRow = aoa[rowOffset + (cell.row_no - 1)];
-          if (!sheetRow) continue;
-          const raw = sheetRow[cell.col_no - 1];
-          if (raw === null || raw === undefined || raw === "") continue;
-          readValuesForSheet++;
-          const asNum = typeof raw === "number" ? raw : Number(String(raw).replace(/,/g, ""));
-          const isNum = Number.isFinite(asNum) && String(raw).trim() !== "";
-          payload.push({
-            table_id: t.id,
-            period_year: year,
-            row_no: cell.row_no,
-            col_no: cell.col_no,
-            numeric_value: isNum ? asNum : null,
-            text_value: isNum ? null : String(raw),
-            updated_by: userId,
-          });
-        }
-        totalReadValues += readValuesForSheet;
-        matchLogs.push(`표 ${t.table_no} "${t.title}": 시트 "${sheetName}" / offset=${rowOffset} / 라벨매칭=${tLabels.length > 0 ? bestScore + "/" + tLabels.length : "n/a"} / 입력 셀 ${tCells.length} / 읽은 값 ${readValuesForSheet}`);
-      }
-      console.info("[TemplateIO upload] sheet/table match summary", {
-        fileName: file.name,
-        workbookSheets: wb.SheetNames,
-        matches: matchLogs,
-        totalInputCells,
-        totalReadValues,
-      });
-      if (matchedSheets === 0) {
-        toast.error("이 지표의 양식 시트를 찾지 못했습니다", { description: `읽은 시트명: ${wb.SheetNames.join(", ") || "없음"}\n기대한 시트명: ${importTargets.map((t) => t.expectedSheetName).join(", ") || "없음"}\n입력 셀 개수: ${totalInputCells}\n읽은 값 개수: ${totalReadValues}` });
-        return;
-      }
-      if (payload.length === 0) {
-        toast.error("입력된 값이 없습니다", { description: `읽은 시트명: ${wb.SheetNames.join(", ") || "없음"}\n기대한 시트명: ${importTargets.map((t) => t.expectedSheetName).join(", ") || "없음"}\n입력 셀 개수: ${totalInputCells}\n읽은 값 개수: ${totalReadValues}\n매칭 로그:\n${matchLogs.join("\n")}` });
-        return;
-      }
-      const { error } = await supabase
-        .from("indicator_table_values")
-        .upsert(payload, { onConflict: "table_id,period_year,row_no,col_no" });
-      if (error) toast.error("업로드 실패", { description: error.message });
-      else {
-        toast.success(`${payload.length}개 셀이 저장되었습니다`);
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ["values"] }),
-          queryClient.refetchQueries({ queryKey: ["values"], type: "active" }),
-          queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] }),
-          queryClient.refetchQueries({ queryKey: ["dashboard-stats"], type: "active" }),
-        ]);
-      }
-    } catch (e) {
-      toast.error("업로드 실패", { description: (e as Error).message });
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  };
-
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
-          <FileSpreadsheet className="size-4" />엑셀 양식 다운로드 / 업로드
+          <FileSpreadsheet className="size-4" />입력값 엑셀 다운로드
         </CardTitle>
         <CardDescription>
-          이 지표 전용 양식을 다운받아 값을 채워 다시 업로드하면 표가 일괄 저장됩니다. ({year}년)
+          위 표에 직접 값을 입력하세요. 입력된 값은 엑셀로 내려받을 수 있습니다. ({year}년)
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -673,23 +544,9 @@ function TemplateIO({ indicatorId, code, name, year, canEdit, userId }: { indica
           <Button variant="outline" size="sm" disabled={busy} onClick={() => downloadTemplate(false)}>
             <Download className="size-4 mr-1" />빈 양식
           </Button>
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => downloadTemplate(true)}>
-            <Download className="size-4 mr-1" />현재 값 포함
+          <Button size="sm" disabled={busy} onClick={() => downloadTemplate(true)}>
+            <Download className="size-4 mr-1" />입력값 다운로드
           </Button>
-          {canEdit && (
-            <>
-              <input
-                ref={inputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
-              />
-              <Button size="sm" disabled={busy} onClick={() => inputRef.current?.click()} className="ml-auto">
-                <Upload className="size-4 mr-1" />작성한 양식 업로드
-              </Button>
-            </>
-          )}
         </div>
       </CardContent>
     </Card>
