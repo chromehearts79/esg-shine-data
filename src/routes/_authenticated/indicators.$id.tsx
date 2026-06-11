@@ -229,10 +229,7 @@ function TableEditor({ table, year, canEdit, userId }: { table: TableDef; year: 
                 {Array.from({ length: maxCol }, (_, ci) => ci + 1).map((c) => {
                   const cell = grid.schema.get(`${r}|${c}`);
                   const v = grid.vals.get(`${r}|${c}`) ?? "";
-                  if (!cell) {
-                    return <td key={c} className="border border-border bg-muted/20 p-0 min-w-[80px]" />;
-                  }
-                  if (!cell.is_input) {
+                  if (cell && !cell.is_input) {
                     return (
                       <td key={c} className="border border-border bg-muted/40 px-3 py-2 font-medium text-foreground whitespace-pre-wrap">
                         {cell.label}
@@ -243,7 +240,7 @@ function TableEditor({ table, year, canEdit, userId }: { table: TableDef; year: 
                     <td key={c} className="border border-border p-0 min-w-[100px]">
                       <CellInput
                         initial={v}
-                        placeholder={cell.label}
+                        placeholder={cell?.label ?? ""}
                         disabled={!canEdit}
                         onSave={(val) => save(r, c, val)}
                       />
