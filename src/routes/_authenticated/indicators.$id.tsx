@@ -240,7 +240,7 @@ function TableEditor({ table, year, canEdit, userId }: { table: TableDef; year: 
                     <td key={c} className="border border-border p-0 min-w-[100px]">
                       <CellInput
                         initial={v}
-                        placeholder={cell.label}
+                        placeholder={cell?.label ?? ""}
                         disabled={!canEdit}
                         onSave={(val) => save(r, c, val)}
                       />
