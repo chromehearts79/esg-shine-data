@@ -17,6 +17,7 @@ import { Route as AuthenticatedUploadRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedIndicatorsIndexRouteImport } from './routes/_authenticated/indicators.index'
 import { Route as AuthenticatedIndicatorsIdRouteImport } from './routes/_authenticated/indicators.$id'
+import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminIndicatorsRouteImport } from './routes/_authenticated/admin/indicators'
 
 const SignupRoute = SignupRouteImport.update({
@@ -60,6 +61,11 @@ const AuthenticatedIndicatorsIdRoute =
     path: '/indicators/$id',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminIndicatorsRoute =
   AuthenticatedAdminIndicatorsRouteImport.update({
     id: '/admin/indicators',
@@ -74,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/upload': typeof AuthenticatedUploadRoute
   '/admin/indicators': typeof AuthenticatedAdminIndicatorsRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/indicators/$id': typeof AuthenticatedIndicatorsIdRoute
   '/indicators/': typeof AuthenticatedIndicatorsIndexRoute
 }
@@ -84,6 +91,7 @@ export interface FileRoutesByTo {
   '/upload': typeof AuthenticatedUploadRoute
   '/': typeof AuthenticatedIndexRoute
   '/admin/indicators': typeof AuthenticatedAdminIndicatorsRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/indicators/$id': typeof AuthenticatedIndicatorsIdRoute
   '/indicators': typeof AuthenticatedIndicatorsIndexRoute
 }
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   '/_authenticated/upload': typeof AuthenticatedUploadRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/indicators': typeof AuthenticatedAdminIndicatorsRoute
+  '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/indicators/$id': typeof AuthenticatedIndicatorsIdRoute
   '/_authenticated/indicators/': typeof AuthenticatedIndicatorsIndexRoute
 }
@@ -108,6 +117,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/upload'
     | '/admin/indicators'
+    | '/admin/users'
     | '/indicators/$id'
     | '/indicators/'
   fileRoutesByTo: FileRoutesByTo
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | '/upload'
     | '/'
     | '/admin/indicators'
+    | '/admin/users'
     | '/indicators/$id'
     | '/indicators'
   id:
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/_authenticated/upload'
     | '/_authenticated/'
     | '/_authenticated/admin/indicators'
+    | '/_authenticated/admin/users'
     | '/_authenticated/indicators/$id'
     | '/_authenticated/indicators/'
   fileRoutesById: FileRoutesById
@@ -197,6 +209,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndicatorsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/users': {
+      id: '/_authenticated/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/indicators': {
       id: '/_authenticated/admin/indicators'
       path: '/admin/indicators'
@@ -212,6 +231,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedUploadRoute: typeof AuthenticatedUploadRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedAdminIndicatorsRoute: typeof AuthenticatedAdminIndicatorsRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedIndicatorsIdRoute: typeof AuthenticatedIndicatorsIdRoute
   AuthenticatedIndicatorsIndexRoute: typeof AuthenticatedIndicatorsIndexRoute
 }
@@ -221,6 +241,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedUploadRoute: AuthenticatedUploadRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedAdminIndicatorsRoute: AuthenticatedAdminIndicatorsRoute,
+  AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedIndicatorsIdRoute: AuthenticatedIndicatorsIdRoute,
   AuthenticatedIndicatorsIndexRoute: AuthenticatedIndicatorsIndexRoute,
 }
