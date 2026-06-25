@@ -1,7 +1,7 @@
 import { Link, Outlet, useRouter } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, ListChecks, Upload, Settings, LogOut, Leaf } from "lucide-react";
+import { LayoutDashboard, ListChecks, Upload, Settings, LogOut, Leaf, Users } from "lucide-react";
 
 export function AppShell() {
   const { user, isAdmin, signOut } = useAuth();
@@ -37,6 +37,7 @@ export function AppShell() {
               {navItem("/indicators", "지표", <ListChecks className="size-4" />)}
               {isAdmin && navItem("/upload", "지표 마스터 업로드", <Upload className="size-4" />)}
               {isAdmin && navItem("/admin/indicators", "지표 마스터", <Settings className="size-4" />)}
+              {isAdmin && navItem("/admin/users", "사용자 관리", <Users className="size-4" />)}
             </nav>
           </div>
           <div className="flex items-center gap-3">
@@ -52,6 +53,7 @@ export function AppShell() {
           {navItem("/indicators", "지표", <ListChecks className="size-4" />)}
           {isAdmin && navItem("/upload", "지표 업로드", <Upload className="size-4" />)}
           {isAdmin && navItem("/admin/indicators", "마스터", <Settings className="size-4" />)}
+          {isAdmin && navItem("/admin/users", "사용자", <Users className="size-4" />)}
         </nav>
       </header>
       <main className="container mx-auto px-4 py-6">
